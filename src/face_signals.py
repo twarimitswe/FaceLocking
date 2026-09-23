@@ -140,6 +140,12 @@ class FaceSignalExtractor:
         face_width = max(distance(points[FACE_LEFT], points[FACE_RIGHT]), 1e-6)
         mouth_width = distance(points[MOUTH_LEFT], points[MOUTH_RIGHT])
         smile_score = mouth_width / face_width
+        logger.debug(
+            "smile geometry: face_left=%s face_right=%s mouth_left=%s mouth_right=%s "
+            "face_width=%.1f mouth_width=%.1f ratio=%.3f",
+            points[FACE_LEFT], points[FACE_RIGHT], points[MOUTH_LEFT], points[MOUTH_RIGHT],
+            face_width, mouth_width, smile_score,
+        )
         was_smiling = self.smiling
         if self.smiling:
             self.smiling = smile_score >= self.smile_off
