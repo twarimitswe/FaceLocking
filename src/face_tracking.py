@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 
 from .align import align_face_5pt
+from .camera import pick_camera_index
 from .face_signals import FaceSignalExtractor
 from .recognize import (
     ArcFaceEmbedderONNX,
@@ -236,7 +237,9 @@ def draw_label(frame, text, xy, color, scale=0.62):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True, help="enrolled identity to lock")
-    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--camera", type=int, default=None,
+                         help="cv2 camera index; auto-detects a plugged-in USB camera over the "
+                              "built-in one when omitted")
     parser.add_argument("--threshold", type=float, default=0.34)
     parser.add_argument("--debug", action="store_true",
                          help="verbose per-frame logs: detection, position, lock state, smile/blink")
@@ -273,13 +276,14 @@ def main():
         smile_off_margin=args.smile_off_margin,
     )
 
-    cap = cv2.VideoCapture(args.camera)
+    camera_index = args.camera if args.camera is not None else pick_camera_index()
+    cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        raise RuntimeError("Camera not available")
+        raise RuntimeError(f"Camera index {camera_index} not available.")
 
     logger.info(
         "face_tracking started: target=%r camera=%d threshold=%.2f",
-        args.target, args.camera, args.threshold,
+        args.target, camera_index, args.threshold,
     )
 
     blink_total = 0
