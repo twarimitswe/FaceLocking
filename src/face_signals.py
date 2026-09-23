@@ -54,25 +54,39 @@ class FaceSignals:
 
 
 class FaceSignalExtractor:
+    """
+    Smile and eye-openness are measured relative to each person's own resting
+    (neutral) geometry rather than a fixed threshold shared by everyone: a
+    fixed ratio that works for one face sits inside another person's normal
+    range (see the smile-stuck-on issue this replaced). Both baselines are
+    slow EMAs updated only while the signal is NOT currently triggered, so a
+    sustained smile or blink can't drag its own baseline toward itself.
+    """
+
     def __init__(
         self,
         model_path: str = _DEFAULT_MODEL_PATH,
-        ear_threshold: float = 0.21,
         blink_min_frames: int = 2,
         blink_max_frames: int = 7,
         closed_frames: int = 8,
-        smile_on: float = 0.38,
-        smile_off: float = 0.35,
+        ear_drop_frac: float = 0.22,
+        smile_on_margin: float = 0.05,
+        smile_off_margin: float = 0.02,
+        baseline_alpha: float = 0.03,
     ):
-        self.ear_threshold = ear_threshold
         self.blink_min_frames = blink_min_frames
         self.blink_max_frames = blink_max_frames
         self.closed_frames = closed_frames
-        self.smile_on = smile_on
-        self.smile_off = smile_off
+        self.ear_drop_frac = ear_drop_frac
+        self.smile_on_margin = smile_on_margin
+        self.smile_off_margin = smile_off_margin
+        self.baseline_alpha = baseline_alpha
+
         self.low_ear_frames = 0
         self.smiling = False
         self.was_eyes_closed = False
+        self.baseline_ear: Optional[float] = None
+        self.baseline_smile_score: Optional[float] = None
 
         options = mp_vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=model_path),
@@ -87,6 +101,8 @@ class FaceSignalExtractor:
         self.low_ear_frames = 0
         self.smiling = False
         self.was_eyes_closed = False
+        self.baseline_ear = None
+        self.baseline_smile_score = None
 
     def close(self) -> None:
         self.landmarker.close()
@@ -120,21 +136,30 @@ class FaceSignalExtractor:
         right_ear = eye_aspect_ratio(points, RIGHT_EYE)
         ear = 0.5 * (left_ear + right_ear)
 
+        if self.baseline_ear is None:
+            self.baseline_ear = ear
+        ear_threshold = self.baseline_ear * (1.0 - self.ear_drop_frac)
+
         blink = False
         blink_held_frames = 0
-        if ear < self.ear_threshold:
+        if ear < ear_threshold:
             self.low_ear_frames += 1
         else:
             blink_held_frames = self.low_ear_frames
             if self.blink_min_frames <= blink_held_frames <= self.blink_max_frames:
                 blink = True
             self.low_ear_frames = 0
+            # only drift the "eyes open" baseline while actually open, so a
+            # blink or sustained closure can't pull its own trigger point down
+            self.baseline_ear += self.baseline_alpha * (ear - self.baseline_ear)
         eyes_closed = self.low_ear_frames >= self.closed_frames
 
         if blink:
-            logger.info("BLINK detected (ear=%.3f, held for %d frames)", ear, blink_held_frames)
+            logger.info("BLINK detected (ear=%.3f, baseline=%.3f, held for %d frames)",
+                        ear, self.baseline_ear, blink_held_frames)
         if eyes_closed != self.was_eyes_closed:
-            logger.info("eyes %s (ear=%.3f)", "CLOSED" if eyes_closed else "OPEN", ear)
+            logger.info("eyes %s (ear=%.3f, baseline=%.3f)", "CLOSED" if eyes_closed else "OPEN",
+                        ear, self.baseline_ear)
             self.was_eyes_closed = eyes_closed
 
         face_width = max(distance(points[FACE_LEFT], points[FACE_RIGHT]), 1e-6)
@@ -146,13 +171,24 @@ class FaceSignalExtractor:
             points[FACE_LEFT], points[FACE_RIGHT], points[MOUTH_LEFT], points[MOUTH_RIGHT],
             face_width, mouth_width, smile_score,
         )
+
+        if self.baseline_smile_score is None:
+            self.baseline_smile_score = smile_score
+        on_threshold = self.baseline_smile_score + self.smile_on_margin
+        off_threshold = self.baseline_smile_score + self.smile_off_margin
+
         was_smiling = self.smiling
         if self.smiling:
-            self.smiling = smile_score >= self.smile_off
+            self.smiling = smile_score >= off_threshold
         else:
-            self.smiling = smile_score >= self.smile_on
+            self.smiling = smile_score >= on_threshold
+            if not self.smiling:
+                # only drift the "neutral mouth" baseline while not smiling,
+                # so a sustained smile can't pull its own trigger point up
+                self.baseline_smile_score += self.baseline_alpha * (smile_score - self.baseline_smile_score)
         if self.smiling != was_smiling:
-            logger.info("smile %s (score=%.3f)", "ON" if self.smiling else "OFF", smile_score)
+            logger.info("smile %s (ratio=%.3f, baseline=%.3f)",
+                        "ON" if self.smiling else "OFF", smile_score, self.baseline_smile_score)
 
         logger.debug("signals: ear=%.3f smile_score=%.3f eyes_closed=%s smiling=%s",
                       ear, smile_score, eyes_closed, self.smiling)
