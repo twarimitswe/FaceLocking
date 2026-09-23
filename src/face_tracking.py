@@ -321,6 +321,13 @@ def main():
                            f"H={position.horizontal} V={position.vertical} "
                            f"error=({position.error_x:+.2f},{position.error_y:+.2f})",
                            (12, 56), (255, 170, 0), 0.60)
+            elif tracker.state == LockState.LOST and tracker.last_box is not None:
+                # keep showing where the target was last seen during a brief
+                # LOST gap instead of the box vanishing every missed frame;
+                # no facial signals are computed here (per the book: LOST
+                # retains identity but produces no current output)
+                x1, y1, x2, y2 = tracker.last_box
+                cv2.rectangle(view, (x1, y1), (x2, y2), (0, 140, 255), 2)
             else:
                 signals.reset()
 
