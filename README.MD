@@ -151,6 +151,13 @@ shows normalized `error_x`/`error_y` and `LEFT/RIGHT/UP/DOWN/CENTER`
 labels - the same position signal `src/track.py` computes for the servo,
 here just displayed instead of driving hardware. Press `q` to quit.
 
+During a brief `LOST` gap the box stays drawn (in orange) at the last
+known position instead of vanishing every missed frame, and smile/blink
+state is preserved rather than reset - only a full drop to `SEARCHING`
+(missing for longer than `lost_timeout` frames) resets the signal
+baselines and blink count, matching the book's "LOST retains identity
+but produces no new output" rule.
+
 Add `--debug` for verbose logging (via the stdlib `logging` module) of
 every detection/tracking/signal step: per-frame face count and lock
 state, each acquire/associate candidate considered with its match
