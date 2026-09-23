@@ -28,6 +28,7 @@ import cv2
 import numpy as np
 import requests
 
+from .camera import pick_camera_index
 from .recognize import HaarFaceMesh5pt, ArcFaceEmbedderONNX, FaceDBMatcher, load_db_npz
 from .haar_5pt import align_face_5pt
 
@@ -150,7 +151,9 @@ def pick_target_name(db_path: Path) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--camera", type=int, default=0, help="cv2 camera index, e.g. the USB webcam's /dev/videoN")
+    parser.add_argument("--camera", type=int, default=None,
+                         help="cv2 camera index; auto-detects a plugged-in USB camera over the "
+                              "built-in one when omitted")
     parser.add_argument("--host", default="servotracker.local", help="ESP32 mDNS hostname or IP")
     parser.add_argument("--invert", action="store_true", help="flip pan direction if the servo turns the wrong way")
     parser.add_argument("--min-angle", type=float, default=0.0, help="lowest safe servo angle")
@@ -166,9 +169,10 @@ def main():
     matcher = FaceDBMatcher(db=load_db_npz(db_path), dist_thresh=0.34)
     servo = ServoClient(host=args.host, invert=args.invert, min_angle=args.min_angle, max_angle=args.max_angle)
 
-    cap = cv2.VideoCapture(args.camera)
+    camera_index = args.camera if args.camera is not None else pick_camera_index()
+    cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        raise RuntimeError(f"Camera index {args.camera} not available.")
+        raise RuntimeError(f"Camera index {camera_index} not available.")
 
     print(f"Following '{target_name}'. Servo at http://{args.host}/  Press 'c' to re-center, 'q' to quit.")
 
