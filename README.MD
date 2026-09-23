@@ -176,8 +176,15 @@ baseline and clears once it falls back within `--smile-off-margin` of it;
 blink/eyes-closed fire once EAR drops `--ear-drop-frac` below your own
 open-eye baseline. This self-calibrates per person/camera without manual
 tuning; the flags exist to adjust sensitivity if needed. With `--debug`,
-the `smile geometry: ... ratio=` and `signals: ear=...` lines show both
-the live value and the current baseline it's being compared against.
+the `smile geometry: ... raw_ratio=... smoothed_ratio=...` and
+`signals: ear=...` lines show the live value(s) and the current baseline
+they're compared against.
+
+The mouth ratio is smoothed (a fast EMA, separate from the slower
+baseline) before being compared to the thresholds, since single-frame
+landmark jitter - worse in low light - can otherwise bounce a borderline
+ratio back and forth across the on/off boundary and make the transition
+look inconsistent even when the expression isn't actually changing.
 
 ## 10. `src/track.py` - servo face-following (needs the ESP32 hardware)
 
