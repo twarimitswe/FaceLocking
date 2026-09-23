@@ -61,6 +61,13 @@ class FaceSignalExtractor:
     range (see the smile-stuck-on issue this replaced). Both baselines are
     slow EMAs updated only while the signal is NOT currently triggered, so a
     sustained smile or blink can't drag its own baseline toward itself.
+
+    The smile ratio itself is also smoothed (a faster EMA than the
+    baseline) before being compared to the thresholds, since single-frame
+    landmark jitter - worse in low light - can otherwise bounce a
+    borderline ratio back and forth across the on/off boundary and make
+    the smile/neutral transition look inconsistent even when the person's
+    expression isn't actually changing.
     """
 
     def __init__(
@@ -73,6 +80,7 @@ class FaceSignalExtractor:
         smile_on_margin: float = 0.05,
         smile_off_margin: float = 0.02,
         baseline_alpha: float = 0.03,
+        smile_smoothing_alpha: float = 0.5,
     ):
         self.blink_min_frames = blink_min_frames
         self.blink_max_frames = blink_max_frames
@@ -81,12 +89,14 @@ class FaceSignalExtractor:
         self.smile_on_margin = smile_on_margin
         self.smile_off_margin = smile_off_margin
         self.baseline_alpha = baseline_alpha
+        self.smile_smoothing_alpha = smile_smoothing_alpha
 
         self.low_ear_frames = 0
         self.smiling = False
         self.was_eyes_closed = False
         self.baseline_ear: Optional[float] = None
         self.baseline_smile_score: Optional[float] = None
+        self.smoothed_smile_score: Optional[float] = None
 
         options = mp_vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=model_path),
@@ -103,6 +113,7 @@ class FaceSignalExtractor:
         self.was_eyes_closed = False
         self.baseline_ear = None
         self.baseline_smile_score = None
+        self.smoothed_smile_score = None
 
     def close(self) -> None:
         self.landmarker.close()
@@ -164,12 +175,19 @@ class FaceSignalExtractor:
 
         face_width = max(distance(points[FACE_LEFT], points[FACE_RIGHT]), 1e-6)
         mouth_width = distance(points[MOUTH_LEFT], points[MOUTH_RIGHT])
-        smile_score = mouth_width / face_width
+        raw_smile_score = mouth_width / face_width
+
+        if self.smoothed_smile_score is None:
+            self.smoothed_smile_score = raw_smile_score
+        else:
+            self.smoothed_smile_score += self.smile_smoothing_alpha * (raw_smile_score - self.smoothed_smile_score)
+        smile_score = self.smoothed_smile_score
+
         logger.debug(
             "smile geometry: face_left=%s face_right=%s mouth_left=%s mouth_right=%s "
-            "face_width=%.1f mouth_width=%.1f ratio=%.3f",
+            "face_width=%.1f mouth_width=%.1f raw_ratio=%.3f smoothed_ratio=%.3f",
             points[FACE_LEFT], points[FACE_RIGHT], points[MOUTH_LEFT], points[MOUTH_RIGHT],
-            face_width, mouth_width, smile_score,
+            face_width, mouth_width, raw_smile_score, smile_score,
         )
 
         if self.baseline_smile_score is None:
