@@ -126,6 +126,16 @@ class LockedFaceTracker:
     def associate(self, faces):
         if self.last_box is None or not faces:
             return None
+
+        # with only one face in view there's nothing to disambiguate against -
+        # a fast-moving target can outrun the displacement penalty below and
+        # get wrongly rejected even though it's obviously still the same
+        # (only) face, so skip straight to it and let periodic ArcFace
+        # re-verification catch a genuine handoff to someone else
+        if len(faces) == 1:
+            logger.debug("associate: single face in view, skipping displacement scoring")
+            return faces[0]
+
         last_center = center(self.last_box)
         last_diag = max(np.linalg.norm(
             np.array([self.last_box[2] - self.last_box[0],
@@ -136,10 +146,10 @@ class LockedFaceTracker:
             box = self.box(face)
             overlap = iou(self.last_box, box)
             displacement = np.linalg.norm(center(box) - last_center) / last_diag
-            score = overlap - 0.35 * displacement
+            score = overlap - 0.20 * displacement
             ranked.append((score, face))
         score, candidate = max(ranked, key=lambda item: item[0])
-        chosen = candidate if score > -0.30 else None
+        chosen = candidate if score > -0.45 else None
         logger.debug(
             "associate: best_score=%.3f box=%s -> %s",
             score, self.box(candidate), "kept" if chosen is not None else "rejected",
@@ -230,13 +240,14 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.34)
     parser.add_argument("--debug", action="store_true",
                          help="verbose per-frame logs: detection, position, lock state, smile/blink")
-    parser.add_argument("--ear-threshold", type=float, default=0.21, help="eye-aspect-ratio closed-eye cutoff")
-    parser.add_argument("--smile-on", type=float, default=0.44,
-                         help="mouth-width/face-width ratio that turns smiling on (calibrate with --debug: "
-                              "log the ratio while neutral, then while smiling, and set this between the two)")
-    parser.add_argument("--smile-off", type=float, default=0.40,
-                         help="ratio that turns smiling back off; must stay below your neutral-face ratio "
-                              "or the smile state gets stuck on")
+    parser.add_argument("--ear-drop-frac", type=float, default=0.22,
+                         help="fraction below each person's own open-eye EAR baseline that counts as closed")
+    parser.add_argument("--smile-on-margin", type=float, default=0.05,
+                         help="how far the mouth/face ratio must rise above each person's own neutral "
+                              "baseline to count as smiling")
+    parser.add_argument("--smile-off-margin", type=float, default=0.02,
+                         help="how close the ratio must return to baseline to clear smiling (must be "
+                              "smaller than --smile-on-margin)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -257,9 +268,9 @@ def main():
     )
     tracker = LockedFaceTracker(args.target, detector, embedder, matcher)
     signals = FaceSignalExtractor(
-        ear_threshold=args.ear_threshold,
-        smile_on=args.smile_on,
-        smile_off=args.smile_off,
+        ear_drop_frac=args.ear_drop_frac,
+        smile_on_margin=args.smile_on_margin,
+        smile_off_margin=args.smile_off_margin,
     )
 
     cap = cv2.VideoCapture(args.camera)
