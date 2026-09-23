@@ -146,14 +146,18 @@ position and normalized error each frame, and every blink/smile/eye-state
 change with the EAR or smile score that triggered it. Without `--debug`
 only state-changing events are printed (quiet by default).
 
-Smile/blink calibration (per the book's Chapter 4/6): the defaults are a
-starting point, not universal - mouth-width/face-width ratio varies by
-face and camera distance. If smiling reads as constantly on (or off),
-run with `--debug`, watch the `smile geometry: ... ratio=` lines while
-neutral vs. actually smiling, then set `--smile-on` between the two and
-`--smile-off` a bit below your neutral ratio (it must stay below your
-neutral floor or the state gets stuck on). `--ear-threshold` works the
-same way for blink/eyes-closed, using the `signals: ear=...` lines.
+Smile and blink/eyes-closed are detected relative to each person's own
+resting geometry, not a fixed number shared by everyone: a running
+baseline tracks your neutral mouth-width/face-width ratio and open-eye
+EAR (each only drifts while that signal is NOT currently triggered, so a
+sustained smile or blink can't pull its own trigger point toward itself).
+Smiling fires once the ratio rises `--smile-on-margin` above your own
+baseline and clears once it falls back within `--smile-off-margin` of it;
+blink/eyes-closed fire once EAR drops `--ear-drop-frac` below your own
+open-eye baseline. This self-calibrates per person/camera without manual
+tuning; the flags exist to adjust sensitivity if needed. With `--debug`,
+the `smile geometry: ... ratio=` and `signals: ear=...` lines show both
+the live value and the current baseline it's being compared against.
 
 ## 10. `src/track.py` - servo face-following (needs the ESP32 hardware)
 
