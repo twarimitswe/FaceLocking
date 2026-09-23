@@ -230,6 +230,13 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.34)
     parser.add_argument("--debug", action="store_true",
                          help="verbose per-frame logs: detection, position, lock state, smile/blink")
+    parser.add_argument("--ear-threshold", type=float, default=0.21, help="eye-aspect-ratio closed-eye cutoff")
+    parser.add_argument("--smile-on", type=float, default=0.44,
+                         help="mouth-width/face-width ratio that turns smiling on (calibrate with --debug: "
+                              "log the ratio while neutral, then while smiling, and set this between the two)")
+    parser.add_argument("--smile-off", type=float, default=0.40,
+                         help="ratio that turns smiling back off; must stay below your neutral-face ratio "
+                              "or the smile state gets stuck on")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -249,7 +256,11 @@ def main():
         dist_thresh=args.threshold,
     )
     tracker = LockedFaceTracker(args.target, detector, embedder, matcher)
-    signals = FaceSignalExtractor()
+    signals = FaceSignalExtractor(
+        ear_threshold=args.ear_threshold,
+        smile_on=args.smile_on,
+        smile_off=args.smile_off,
+    )
 
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
