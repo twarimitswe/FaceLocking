@@ -26,11 +26,24 @@ source .venv/bin/activate
 python -m src.camera
 ```
 
-Opens whatever camera is at index 0 and shows the raw feed. Run this first
-if nothing else is working, to confirm OpenCV can see a camera at all.
-Press `q` to quit. If your camera isn't at index 0, check `ls /dev/video*`
-and adjust (see `src/track.py`'s `--camera` flag below for how the index
-maps to a device).
+Auto-detects and opens a camera, preferring a plugged-in USB camera over
+the laptop's built-in one (see "Camera auto-detection" below). Run this
+first if nothing else is working, to confirm OpenCV can see a camera at
+all. Press `q` to quit.
+
+### Camera auto-detection
+
+`src/camera.py`'s `pick_camera_index()` is used by every script below
+that opens a camera (`track.py`, `face_tracking.py`, and this file's own
+`main()`). On Linux, video devices enumerate in attach order: the
+built-in webcam is present at boot and claims the lowest index(es), so a
+USB camera plugged in afterward gets a higher one. Among the working,
+real capture devices (checked via udev's V4L2 capability flag, since a
+camera can expose a second metadata-only node that still opens and
+returns a frame) it picks the highest index - the external camera if one
+is plugged in, the built-in one otherwise. Pass `--camera N` on
+`track.py`/`face_tracking.py` to override this and force a specific
+index.
 
 ## 2. `src/detect.py` - Haar face box only
 
@@ -165,12 +178,12 @@ Requires `firmware/servo_tracker/servo_tracker.ino` flashed onto the ESP32
 first - see the firmware section below.
 
 ```
-python -m src.track --camera 2 --host <esp32-ip-or-servotracker.local>
+python -m src.track --host <esp32-ip-or-servotracker.local>
 ```
 
-- `--camera N`: which `/dev/videoN` to use (0 is usually the laptop's
-  built-in camera; check `ls /dev/video*` / `lsusb` to find your USB
-  camera's index).
+- `--camera N`: overrides camera auto-detection (see above) with a
+  specific `/dev/videoN` index; omit it to auto-prefer a plugged-in USB
+  camera over the built-in one.
 - `--host`: the ESP32's mDNS hostname (`servotracker.local`, if mDNS
   resolves on your machine) or its current DHCP IP (check the Arduino
   serial monitor - it's printed on boot, and can change between reboots).
